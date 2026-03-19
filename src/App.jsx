@@ -469,6 +469,23 @@ export default function SnookerApp() {
 		!g.missTargetMode &&
 		(g.phase === "color" || g.phase === "endgame")
 	const canMiss = !g.frameOver && !g.missMode && !g.missTargetMode
+	const missNoContactPoints =
+		g.phase === "endgame" && nextColor
+			? Math.max(FOUL_MIN, nextColor.points)
+			: FOUL_MIN
+	const missWrongColorOptions =
+		g.phase === "endgame"
+			? g.colorsOnTable.filter((ball) => ball.id !== nextColor?.id)
+			: [
+					{
+						id: "red",
+						label: "Rouge",
+						points: 1,
+						ball: "#d42020",
+						text: "#fff",
+					},
+					...COLORS,
+				]
 
 	const phaseInfo =
 		g.phase === "red"
@@ -646,18 +663,18 @@ export default function SnookerApp() {
 									{
 										type: "miss_set_target",
 										contact: "nothing",
-										ballPoints: 0,
+										ballPoints: missNoContactPoints,
 										ballLabel: "rien",
 										ballId: "nothing",
 									},
-									`Miss (sans contact) — ${g.players[opp].name} +4pts`,
+									`Miss (sans contact) — ${g.players[opp].name} +${missNoContactPoints}pts`,
 								)
 							}
 							className="w-full px-[14px] py-[11px] rounded-xl mb-2 bg-slate-50 dark:bg-slate-800 border border-black/7 dark:border-white/8 text-gray-900 dark:text-slate-100 text-[13px] font-bold cursor-pointer font-[inherit] text-left flex justify-between items-center hover:bg-black/5 dark:hover:bg-white/8 transition-colors"
 						>
 							<span>🚫 Sans contact</span>
 							<span className="text-[12px] text-gray-400 dark:text-slate-500 font-semibold">
-								4 pts
+								{missNoContactPoints} pts
 							</span>
 						</button>
 
@@ -666,16 +683,7 @@ export default function SnookerApp() {
 							Mauvaise couleur touchée
 						</div>
 						<div className="flex flex-wrap gap-2">
-							{[
-								{
-									id: "red",
-									label: "Rouge",
-									points: 1,
-									ball: "#d42020",
-									text: "#fff",
-								},
-								...COLORS,
-							].map((ball) => {
+							{missWrongColorOptions.map((ball) => {
 								const awarded = Math.max(FOUL_MIN, ball.points)
 								return (
 									<button
