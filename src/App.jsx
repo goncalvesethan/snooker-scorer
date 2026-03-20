@@ -17,6 +17,7 @@ const COLORS = [
 ]
 const REDS_TOTAL = 15
 const FOUL_MIN = 4
+const STORAGE_KEY = "snooker-scorer-state-v1"
 
 function calcMaxRemaining(reds, colorsOnTable) {
 	if (reds > 0)
@@ -335,6 +336,30 @@ function HistoryLog({ history }) {
 // ── Main App ──────────────────────────────────────────────────────────────
 export default function SnookerApp() {
 	const [theme, setTheme] = useState("dark")
+	const [hydrated, setHydrated] = useState(false)
+
+	useEffect(() => {
+		try {
+			const raw = localStorage.getItem(STORAGE_KEY)
+			if (raw) {
+				const saved = JSON.parse(raw)
+				if (saved.theme === "dark" || saved.theme === "light") {
+					setTheme(saved.theme)
+				}
+				if (typeof saved.p1Name === "string") setP1Name(saved.p1Name)
+				if (typeof saved.p2Name === "string") setP2Name(saved.p2Name)
+				if (typeof saved.setup === "boolean") setSetup(saved.setup)
+				if (saved.game) setGame(saved.game)
+				if (Array.isArray(saved.stateHistory)) {
+					setStateHistory(saved.stateHistory)
+				}
+			}
+		} catch {
+			// Ignore corrupted or unavailable localStorage data.
+		} finally {
+			setHydrated(true)
+		}
+	}, [])
 
 	useEffect(() => {
 		document.documentElement.classList.toggle("dark", theme === "dark")
@@ -355,6 +380,25 @@ export default function SnookerApp() {
 	const [setup, setSetup] = useState(true)
 	const [game, setGame] = useState(null)
 	const [stateHistory, setStateHistory] = useState([])
+
+	useEffect(() => {
+		if (!hydrated) return
+		try {
+			localStorage.setItem(
+				STORAGE_KEY,
+				JSON.stringify({
+					theme,
+					p1Name,
+					p2Name,
+					setup,
+					game,
+					stateHistory,
+				}),
+			)
+		} catch {
+			// localStorage may be full or unavailable; keep app usable.
+		}
+	}, [hydrated, theme, p1Name, p2Name, setup, game, stateHistory])
 
 	const startGame = () => {
 		setGame(
@@ -397,6 +441,10 @@ export default function SnookerApp() {
 			{theme === "dark" ? "Light" : "Dark"}
 		</button>
 	)
+
+	if (!hydrated) {
+		return null
+	}
 
 	// ── Setup screen ──────────────────────────────────────────────────────
 	if (setup) {
