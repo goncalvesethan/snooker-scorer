@@ -17,6 +17,7 @@ const COLORS = [
 ]
 const REDS_TOTAL = 15
 const FOUL_MIN = 4
+const STORAGE_KEY = "snooker-scorer-state-v1"
 
 function calcMaxRemaining(reds, colorsOnTable) {
 	if (reds > 0)
@@ -36,6 +37,7 @@ function makeInitialState(p1, p2) {
 		colorsOnTable: [...COLORS],
 		phase: "red",
 		consecutivePots: 0,
+		breakPoints: 0,
 		extraReds: 0,
 		history: [],
 		frameOver: false,
@@ -57,6 +59,7 @@ function applyShot(state, action) {
 	if (action.type === "pot_red") {
 		s.redsLeft = Math.max(0, s.redsLeft - 1)
 		s.players[cur].score += 1
+		s.breakPoints += 1
 		s.phase = "color"
 		s.extraReds = 0
 		s.consecutivePots += 1
@@ -66,6 +69,7 @@ function applyShot(state, action) {
 			s.extraReds = (s.extraReds || 0) + 1
 			s.redsLeft = Math.max(0, s.redsLeft - 1)
 			s.players[cur].score += 1
+			s.breakPoints += 1
 			s.message = `+${s.extraReds} rouge${s.extraReds > 1 ? "s" : ""} bonus — choisissez la couleur.`
 		}
 	} else if (action.type === "pot_color") {
@@ -73,6 +77,7 @@ function applyShot(state, action) {
 		const extras = s.extraReds || 0
 		s.extraReds = 0
 		s.players[cur].score += ball.points
+		s.breakPoints += ball.points
 		s.consecutivePots += 1
 		const extrasLabel =
 			extras > 0
@@ -107,6 +112,7 @@ function applyShot(state, action) {
 	} else if (action.type === "miss_set_target") {
 		const foulVal = Math.max(FOUL_MIN, action.ballPoints)
 		s.players[opp].score += foulVal
+		s.breakPoints = 0
 		s.missFoulValue = foulVal
 		s.missContactType = action.contact
 		if (action.contact === "wrong_red" && s.redsLeft > 0) {
@@ -129,6 +135,7 @@ function applyShot(state, action) {
 		s.missMode = false
 		s.missFoulValue = 0
 		s.currentPlayer = opp
+		s.breakPoints = 0
 		s.consecutivePots = 0
 		if (s.phase === "endgame") {
 			// stays in endgame
@@ -146,6 +153,7 @@ function applyShot(state, action) {
 		s.players[opp].score += FOUL_MIN
 		s.redsLeft = Math.max(0, s.redsLeft - 1)
 		s.currentPlayer = opp
+		s.breakPoints = 0
 		s.consecutivePots = 0
 		if (s.redsLeft === 0) {
 			s.phase = "endgame"
@@ -162,9 +170,23 @@ function applyShot(state, action) {
 		const awarded = Math.max(FOUL_MIN, action.value)
 		s.players[opp].score += awarded
 		s.currentPlayer = opp
+		s.breakPoints = 0
 		s.consecutivePots = 0
 		if (s.phase === "endgame") {
-			// stays in endgame
+			if (action.removePottedBall && action.ballId) {
+				s.colorsOnTable = s.colorsOnTable.filter(
+					(c) => c.id !== action.ballId,
+				)
+				if (s.colorsOnTable.length === 0) {
+					s.frameOver = true
+					const [sc0, sc1] = [s.players[0].score, s.players[1].score]
+					s.winner = sc0 > sc1 ? 0 : sc1 > sc0 ? 1 : null
+					s.message =
+						s.winner !== null
+							? `${s.players[s.winner].name} remporte la frame !`
+							: "Égalité !"
+				}
+			}
 		} else if (s.redsLeft === 0) {
 			s.phase = "endgame"
 		} else {
@@ -174,9 +196,15 @@ function applyShot(state, action) {
 			s.phase === "endgame" && s.colorsOnTable.length > 0
 				? ` → ${s.colorsOnTable[0].label}`
 				: ""
-		s.message = `Faute — ${s.players[opp].name} reçoit ${awarded} pts.${nextBallF}`
+		if (!s.frameOver) {
+			const foulLabel = action.removePottedBall
+				? `Faute — blanche + ${action.ballLabel || "couleur"} rentrée`
+				: "Faute"
+			s.message = `${foulLabel} — ${s.players[opp].name} reçoit ${awarded} pts.${nextBallF}`
+		}
 	} else if (action.type === "end_break") {
 		s.currentPlayer = opp
+		s.breakPoints = 0
 		s.consecutivePots = 0
 		if (s.phase === "endgame") {
 			// stays in endgame
@@ -335,6 +363,30 @@ function HistoryLog({ history }) {
 // ── Main App ──────────────────────────────────────────────────────────────
 export default function SnookerApp() {
 	const [theme, setTheme] = useState("dark")
+	const [hydrated, setHydrated] = useState(false)
+
+	useEffect(() => {
+		try {
+			const raw = localStorage.getItem(STORAGE_KEY)
+			if (raw) {
+				const saved = JSON.parse(raw)
+				if (saved.theme === "dark" || saved.theme === "light") {
+					setTheme(saved.theme)
+				}
+				if (typeof saved.p1Name === "string") setP1Name(saved.p1Name)
+				if (typeof saved.p2Name === "string") setP2Name(saved.p2Name)
+				if (typeof saved.setup === "boolean") setSetup(saved.setup)
+				if (saved.game) setGame(saved.game)
+				if (Array.isArray(saved.stateHistory)) {
+					setStateHistory(saved.stateHistory)
+				}
+			}
+		} catch {
+			// Ignore corrupted or unavailable localStorage data.
+		} finally {
+			setHydrated(true)
+		}
+	}, [])
 
 	useEffect(() => {
 		document.documentElement.classList.toggle("dark", theme === "dark")
@@ -355,6 +407,25 @@ export default function SnookerApp() {
 	const [setup, setSetup] = useState(true)
 	const [game, setGame] = useState(null)
 	const [stateHistory, setStateHistory] = useState([])
+
+	useEffect(() => {
+		if (!hydrated) return
+		try {
+			localStorage.setItem(
+				STORAGE_KEY,
+				JSON.stringify({
+					theme,
+					p1Name,
+					p2Name,
+					setup,
+					game,
+					stateHistory,
+				}),
+			)
+		} catch {
+			// localStorage may be full or unavailable; keep app usable.
+		}
+	}, [hydrated, theme, p1Name, p2Name, setup, game, stateHistory])
 
 	const startGame = () => {
 		setGame(
@@ -397,6 +468,10 @@ export default function SnookerApp() {
 			{theme === "dark" ? "Light" : "Dark"}
 		</button>
 	)
+
+	if (!hydrated) {
+		return null
+	}
 
 	// ── Setup screen ──────────────────────────────────────────────────────
 	if (setup) {
@@ -576,6 +651,11 @@ export default function SnookerApp() {
 										<span className="text-[10px] text-blue-600 dark:text-blue-400 font-extrabold tracking-widest">
 											EN JEU
 										</span>
+									</div>
+								)}
+								{isActive && (
+									<div className="mt-1 text-[11px] font-bold text-blue-600 dark:text-blue-400">
+										Break: {g.breakPoints}
 									</div>
 								)}
 							</div>
@@ -954,6 +1034,26 @@ export default function SnookerApp() {
 						<Card>
 							<SectionLabel>Faute sur bille</SectionLabel>
 							<div className="flex flex-wrap justify-center gap-[7px]">
+								{g.phase === "endgame" && nextColor && (
+									<button
+										onClick={() =>
+											dispatch(
+												{
+													type: "foul",
+													value: nextColor.points,
+													removePottedBall: true,
+													ballId: nextColor.id,
+													ballLabel: nextColor.label,
+												},
+												`⚠ Blanche + ${nextColor.label} rentrée — ${g.players[opp].name} +${Math.max(4, nextColor.points)}pts`,
+											)
+										}
+										className="px-[13px] py-[7px] rounded-[9px] bg-orange-500/12 border border-orange-500/35 text-amber-700 dark:text-amber-400 text-[12px] font-bold cursor-pointer font-[inherit] transition-transform duration-100 hover:-translate-y-px"
+									>
+										Blanche + {nextColor.label} rentrée ·{" "}
+										{Math.max(4, nextColor.points)}
+									</button>
+								)}
 								{/* Faute générique */}
 								<button
 									onClick={() =>
