@@ -629,6 +629,12 @@ export default function SnookerApp() {
 				<div className="flex gap-3 mb-[14px]">
 					{g.players.map((p, i) => {
 						const isActive = i === g.currentPlayer && !g.frameOver
+						const otherScore = g.players[1 - i].score
+						const pointsBehind = Math.max(0, otherScore - p.score)
+						const activeScore = g.players[g.currentPlayer].score
+						const waitingPlayerIdx = 1 - g.currentPlayer
+						const waitingPlayerLead =
+							g.players[waitingPlayerIdx].score - activeScore
 						return (
 							<div
 								key={i}
@@ -645,6 +651,19 @@ export default function SnookerApp() {
 								<div className="text-[54px] font-black leading-none tracking-[-2px]">
 									{p.score}
 								</div>
+								{i !== g.currentPlayer && !g.frameOver && (
+									<div
+										className={`mt-1 text-[11px] font-semibold ${
+											waitingPlayerLead > 0
+												? "text-green-500 dark:text-green-400"
+												: "text-yellow-500 dark:text-yellow-400"
+										}`}
+									>
+										{waitingPlayerLead > 0
+											? `Avance: ${waitingPlayerLead} pt${waitingPlayerLead > 1 ? "s" : ""}`
+											: `Retard: ${pointsBehind} pt${pointsBehind > 1 ? "s" : ""}`}
+									</div>
+								)}
 								{isActive && (
 									<div className="mt-2 flex items-center justify-center gap-[5px]">
 										<span className="w-[6px] h-[6px] rounded-full bg-blue-500 inline-block animate-pulse" />
